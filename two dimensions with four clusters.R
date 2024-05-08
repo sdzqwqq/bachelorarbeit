@@ -3,8 +3,10 @@ library(cluster)
 library(missRanger)
 library(tidyverse)
 library(mice)
+library(Amelia)
 library(ggplot2)
 library(VIM)
+library(missForest)
 library(cluster)
 library(mclust)
 library(fpc)
@@ -53,13 +55,18 @@ dataPMM10 = list()
 dataPMM20 = list()
 dataPMM40 = list()
 
+dataAmelia10Imputed = list()
+dataAmelia10Imputed1 = list()
+dataAmelia10Imputed2 = list()
+dataAmelia10Imputed3 = list()
+dataAmelia10Imputed4 = list()
+dataAmelia10Imputed5 = list()
+dataAmelia20Imputed = list()
+dataAmelia40Imputed = list()
+
 dataAmelia10 = list()
 dataAmelia20 = list()
 dataAmelia40 = list()
-
-dataAmelia10Helper = list()
-dataAmelia20Helper = list()
-dataAmelia40Helper = list()
 
 clusterBaseline = list()
 
@@ -74,11 +81,6 @@ clusterRanger40 = list()
 clusterPMM10 = list()
 clusterPMM20 = list()
 clusterPMM40 = list()
-
-clusterAmelia10 = list()
-clusterAmelia20 = list()
-clusterAmelia40 = list()
-
 
 rMean = as.data.frame(0)
 rMean10 = as.data.frame(0)
@@ -95,10 +97,6 @@ rPMM10 = as.data.frame(0)
 rPMM20 = as.data.frame(0)
 rPMM40 = as.data.frame(0)
 
-rAmelia = as.data.frame(0)
-rAmelia10 = as.data.frame(0)
-rAmelia20 = as.data.frame(0)
-rAmelia40 = as.data.frame(0)
 
 jaccardMean10 = as.data.frame(0)
 jaccardMean20 = as.data.frame(0)
@@ -114,19 +112,10 @@ jaccardPMM10 = as.data.frame(0)
 jaccardPMM20 = as.data.frame(0)
 jaccardPMM40 = as.data.frame(0)
 
-jaccardAmelia = as.data.frame(0)
-jaccardAmelia10 = as.data.frame(0)
-jaccardAmelia20 = as.data.frame(0)
-jaccardAmelia40 = as.data.frame(0)
-
 ajrClv = as.data.frame(0)
 ajrFossil = as.data.frame(0)
 jaccardRanger = list()
 jaccardPMM = list()
-
-silValuesMean = list()
-silValuesRanger = list()
-silValuesPMM = list()
 
 
 #### Help functions for data imputation and clustering
@@ -139,12 +128,20 @@ imputeMean = function(data) {
 }
 
 # clustering function 
-clusterData = function(data, numClusters = 2) {
+clusterData = function(data, numClusters = 4) {
   kmeansCluster = kmeans(data, centers = numClusters)
   data$cluster = as.character(kmeansCluster$cluster)
   return(data)
 }
 
+# function to calculate the jaccard index between the baseline cluster and a cluster with imputed data
+jaccard = function(data, imputedData) {
+  intersection = length(intersect(data, imputedData))
+  union = length(union(data, imputedData))
+  
+  jaccard = intersection / union
+  return(jaccard)
+}
 
 # function to calculate silhouette values of a cluster
 sil = function(clusteredData) {
@@ -153,7 +150,7 @@ sil = function(clusteredData) {
   return(meanSilValues)
 }
 
-# loop for single imputations
+
 for (i in 1:50) {
   data = as.data.frame(rmvnorm(n = n, mean = mean, sigma = cov))
   colnames(data) = c("Var1", "Var2")
@@ -177,14 +174,13 @@ for (i in 1:50) {
   dataPMM10[[i]] = complete(mice(dataMissing10[[i]], method = "pmm", m = 1))
   dataPMM20[[i]] = complete(mice(dataMissing20[[i]], method = "pmm", m = 1))
   dataPMM40[[i]] = complete(mice(dataMissing40[[i]], method = "pmm", m = 1))
-
   # cluster creation starts here. first a baseline cluster without any missing data that the imputed data cluster get compared to
   clusterBaseline[[i]] = clusterData(dataList[[i]])
   # then cluster for mean imputation, missranger imputation and mice imputation
   clusterMean10[[i]] = clusterData(dataMean10[[i]])
   clusterMean20[[i]] = clusterData(dataMean20[[i]])
   clusterMean40[[i]] = clusterData(dataMean40[[i]])
-
+  
   clusterRanger10[[i]] = clusterData(dataRanger10[[i]])
   clusterRanger20[[i]] = clusterData(dataRanger20[[i]])
   clusterRanger40[[i]] = clusterData(dataRanger40[[i]])
@@ -200,33 +196,34 @@ for (i in 1:50) {
   jaccardMean10[i] = clv.Jaccard(std.ext(clusterBaseline[[i]]$cluster, clusterMean10[[i]]$cluster))
   jaccardMean20[i] = clv.Jaccard(std.ext(clusterBaseline[[i]]$cluster, clusterMean20[[i]]$cluster))
   jaccardMean40[i] = clv.Jaccard(std.ext(clusterBaseline[[i]]$cluster, clusterMean40[[i]]$cluster))
-
+  
   jaccardRanger10[i] = clv.Jaccard(std.ext(clusterBaseline[[i]]$cluster, clusterRanger10[[i]]$cluster))
   jaccardRanger20[i] = clv.Jaccard(std.ext(clusterBaseline[[i]]$cluster, clusterRanger20[[i]]$cluster))
   jaccardRanger40[i] = clv.Jaccard(std.ext(clusterBaseline[[i]]$cluster, clusterRanger40[[i]]$cluster))
-  # 
+  
   jaccardPMM10[i] = clv.Jaccard(std.ext(clusterBaseline[[i]]$cluster, clusterPMM10[[i]]$cluster))
   jaccardPMM20[i] = clv.Jaccard(std.ext(clusterBaseline[[i]]$cluster, clusterPMM20[[i]]$cluster))
   jaccardPMM40[i] = clv.Jaccard(std.ext(clusterBaseline[[i]]$cluster, clusterPMM40[[i]]$cluster))
   
   # calculating the rand index in comparing the clusters with the baseline cluster using the clv.Rand function
   # of the clv package
-
+  
   rMean10[i] = clv.Rand(std.ext(clusterBaseline[[i]]$cluster, clusterMean10[[i]]$cluster))
   rMean20[i] = clv.Rand(std.ext(clusterBaseline[[i]]$cluster, clusterMean20[[i]]$cluster))
   rMean40[i] = clv.Rand(std.ext(clusterBaseline[[i]]$cluster, clusterMean40[[i]]$cluster))
-
+  
   rRanger10[i] = clv.Rand(std.ext(clusterBaseline[[i]]$cluster, clusterRanger10[[i]]$cluster))
   rRanger20[i] = clv.Rand(std.ext(clusterBaseline[[i]]$cluster, clusterRanger20[[i]]$cluster))
   rRanger40[i] = clv.Rand(std.ext(clusterBaseline[[i]]$cluster, clusterRanger40[[i]]$cluster))
-
+  
   rPMM10[i] = clv.Rand(std.ext(clusterBaseline[[i]]$cluster, clusterPMM10[[i]]$cluster))
   rPMM20[i] = clv.Rand(std.ext(clusterBaseline[[i]]$cluster, clusterPMM20[[i]]$cluster))
   rPMM40[i] = clv.Rand(std.ext(clusterBaseline[[i]]$cluster, clusterPMM40[[i]]$cluster))
   
-
-  # calculating the silhouette
+  
 }
+
+
 
 # turning the data frames of the jaccard indizes into the proper format, a long dataframe with 50 observables of 1 variable as opposed to 50 variables with 1 observation each
 
@@ -248,7 +245,6 @@ jaccardRanger40 = pivot(jaccardRanger40)
 jaccardPMM10 = pivot(jaccardPMM10)
 jaccardPMM20 = pivot(jaccardPMM20)
 jaccardPMM40 = pivot(jaccardPMM40)
-
 
 rMean10 = pivot(rMean10)
 rMean20 = pivot(rMean20)
@@ -288,13 +284,14 @@ randRanger = jac(rRanger10, rRanger20, rRanger40)
 
 box = function(data, ylable, title, filename, ylimit = c(0.4, 0.9), color = "bisque2") {
   plot = ggplot(data, aes(x = as.factor(missing), y = value)) + geom_boxplot(fill = color, alpha = 0.3) + xlab("% of missing data") + ylab(ylable) + ggtitle(title) +ylim(ylimit)
-  ggsave(filename = filename, path = "./2d2c/")
+  ggsave(filename = filename, path = "./2d4c/")
   return(plot)
-  }
+}
 
 box(jaccardMean, "Jaccard Index", "Boxplot of the Jaccard Indices for mean imputation", "meanJaccard.jpg")
 box(jaccardPMM, "Jaccard Index", "Boxplot of the Jaccard Indices for imputation using mice", "meanPMM.jpg")
 box(jaccardRanger, "Jaccard Index", "Boxplot of the Jaccard Indices for imputation using ranger", "meanRanger.jpg")
+
 
 box(randMean, "Rand Index", "Boxplot of the Rand Indices for mean imputation", "randMean.jpg", c(0.6,1), "cadetblue2")
 box(randPMM, "Rand Index", "Boxplot of the Rand Indices for imputation using mice", "randMice.jpg",c(0.6,1), "cadetblue2")
@@ -329,38 +326,35 @@ avgRRanger20 = mean(rRanger20$value)
 avgRRanger40 = mean(rRanger40$value)
 
 
-## impute data
+# plotting of arbitrary example clusters
 
-# plotting of random example clusters
+baselinePlot = ggplot() + geom_point(data = clusterBaseline[[18]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the data without any missing values or imputations")
+ggsave("Baseline.jpg", path = "./2d4c/")
 
-baselinePlot = ggplot() + geom_point(data = clusterBaseline[[10]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the data without any missing values or imputations")
-ggsave("Baseline.jpg", path = "./2d2c/")
+mean10Plot = ggplot() + geom_point(data = clusterMean10[[2]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the dataset missing 10% of the data, using mean imputation")
+ggsave("mean10.jpg", path = "./2d4c/")
 
-mean10Plot = ggplot() + geom_point(data = clusterMean10[[5]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the dataset missing 10% of the data, using mean imputation")
-ggsave("mean10.jpg", path = "./2d2c/")
+mean20Plot = ggplot() + geom_point(data = clusterMean20[[41]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the dataset missing 20% of the data, using mean imputation")
+ggsave("mean20.jpg", path = "./2d4c/")
 
-mean20Plot = ggplot() + geom_point(data = clusterMean20[[30]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the dataset missing 20% of the data, using mean imputation")
-ggsave("mean20.jpg", path = "./2d2c/")
+mean40Plot = ggplot() + geom_point(data = clusterMean40[[9]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the dataset missing 40% of the data, using mean imputation")
+ggsave("mean40.jpg", path = "./2d4c/")
 
-mean40Plot = ggplot() + geom_point(data = clusterMean40[[35]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the dataset missing 40% of the data, using mean imputation")
-ggsave("mean40.jpg", path = "./2d2c/")
+ranger10Plot = ggplot() + geom_point(data = clusterRanger10[[4]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the dataset missing 10% of the data, using mean random forest imputation with missRanger")
+ggsave("ranger10.jpg", path = "./2d4c/")
 
-ranger10Plot = ggplot() + geom_point(data = clusterRanger10[[25]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the dataset missing 10% of the data, using mean random forest imputation with missRanger")
-ggsave("ranger10.jpg", path = "./2d2c/")
-
-ranger20Plot = ggplot() + geom_point(data = clusterRanger20[[10]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the dataset missing 20% of the data, using mean random forest imputation with missRanger")
-ggsave("ranger20.jpg", path = "./2d2c/")
+ranger20Plot = ggplot() + geom_point(data = clusterRanger20[[6]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the dataset missing 20% of the data, using mean random forest imputation with missRanger")
+ggsave("ranger20.jpg", path = "./2d4c/")
 
 ranger40Plot = ggplot() + geom_point(data = clusterRanger40[[2]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the dataset missing 40% of the data, using mean random forest imputation with missRanger")
-ggsave("ranger40.jpg", path = "./2d2c/")
+ggsave("ranger40.jpg", path = "./2d4c/")
 
-pmm10plot = ggplot() + geom_point(data = clusterPMM10[[2]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the dataset missing 10% of the data, using mice")
-ggsave("mice10.jpg", path = "./2d2c/")
+pmm10plot = ggplot() + geom_point(data = clusterPMM10[[21]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the dataset missing 10% of the data, using mice")
+ggsave("mice10.jpg", path = "./2d4c/")
 
-pmm20plot = ggplot() + geom_point(data = clusterPMM20[[3]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the dataset missing 20% of the data, using mice")
-ggsave("mice20.jpg", path = "./2d2c/")
+pmm20plot = ggplot() + geom_point(data = clusterPMM20[[13]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the dataset missing 20% of the data, using mice")
+ggsave("mice20.jpg", path = "./2d4c/")
 
-pmm40plot = ggplot() + geom_point(data = clusterPMM10[[11]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the dataset missing 40% of the data, using mice")
-ggsave("mice40.jpg", path = "./2d2c/")
-
+pmm40plot = ggplot() + geom_point(data = clusterPMM10[[21]], mapping = aes(x = Var1, y = Var2, colour = cluster)) + labs(x = "Variable 1", y = "Variable 2") + xlim(-8,8) + ylim(5, 15) + ggtitle("k-means clustering of the dataset missing 40% of the data, using mice")
+ggsave("mice40.jpg", path = "./2d4c/")
 
